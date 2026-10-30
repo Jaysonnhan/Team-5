@@ -1,15 +1,18 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useAppState } from '../lib/AppState.jsx'
+import { useLang } from '../lib/i18n.jsx'
 import { isTeam, visibleCases } from '../lib/visibility.js'
 import { searchCases } from '../lib/search.js'
 import { ALL_THEMES } from '../data/seedCases.js'
 import CaseCard from '../components/CaseCard.jsx'
 import EmptyState from '../components/EmptyState.jsx'
 import Icon from '../components/Icon.jsx'
-import StudentStudio from './StudentStudio.jsx'
+import { l, themeLabel } from '../lib/text.js'
 
 export default function ExploreCases() {
-  const { cases, role, entriesFor, remoteError } = useAppState()
+  useLang()
+  const { cases, role, remoteError } = useAppState()
   const [query, setQuery] = useState('')
   const [themes, setThemes] = useState([])
   const student = isTeam(role)
@@ -27,21 +30,29 @@ export default function ExploreCases() {
   return (
     <div className="page">
       {student ? (
-        <nav className="journey-stages" aria-label="Student journey">
-          <a href="#explore"><span>1</span><strong>Explore</strong></a>
-          <a href="#studio"><span>2</span><strong>My field study</strong></a>
+        <nav className="journey-stages" aria-label={l('Student journey', '学生研究路径')}>
+          <a href="#explore" className="is-current" aria-current="page"><span>1</span><strong>{l('Explore', '探索')}</strong></a>
+          <Link to="/studio"><span>2</span><strong>{l('My field study', '我的田野研究')}</strong></Link>
         </nav>
       ) : null}
 
       <section className="hero" id="explore">
-        <p className="eyebrow">01 / {student ? 'Explore & find ideas' : 'Student case library'}</p>
+        <p className="eyebrow">01 / {student ? l('Explore & find ideas', '探索与寻找灵感') : l('Student case library', '学生案例库')}</p>
         <h1 className="page-title">
-          {student ? 'Find a question. Follow your curiosity.' : 'Every journey leaves a story.'}
+          {student
+            ? l('Find a question. Follow your curiosity.', '先找到一个好问题，然后跟随好奇心。')
+            : l('Every journey leaves a story.', '每段旅程，都会留下一个故事。')}
         </h1>
         <p className="page-lede">
           {student
-            ? 'See how other students turned their curiosity into field research, then start your own journal below.'
-            : 'Explore published student field studies, from their first question to what they learned along the way.'}
+            ? l(
+                'See how other students turned their curiosity into field research, then start your own journal below.',
+                '看看其他同学如何把好奇心变成田野研究，然后在下方开始你自己的日志。',
+              )
+            : l(
+                'Explore published student field studies, from their first question to what they learned along the way.',
+                '浏览已发布的学生田野研究，从最初的问题到一路上的收获。',
+              )}
         </p>
 
         <div className="search-bar">
@@ -50,11 +61,11 @@ export default function ExploreCases() {
             type="search"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search a topic, place or research question"
-            aria-label="Search cases"
+            placeholder={l('Search a topic, place or research question', '搜索主题、地点或研究问题')}
+            aria-label={l('Search cases', '搜索案例')}
           />
           {query ? (
-            <button type="button" className="icon-btn" onClick={() => setQuery('')} aria-label="Clear search">
+            <button type="button" className="icon-btn" onClick={() => setQuery('')} aria-label={l('Clear search', '清除搜索')}>
               <Icon name="close" size={16} />
             </button>
           ) : null}
@@ -70,7 +81,7 @@ export default function ExploreCases() {
                   aria-pressed={themes.includes(theme)}
                   onClick={() => toggleTheme(theme)}
                 >
-                  {theme}
+                  {themeLabel(theme)}
                 </button>
               </li>
             ))}
@@ -84,7 +95,7 @@ export default function ExploreCases() {
                 setThemes([])
               }}
             >
-              Clear filters
+              {l('Clear filters', '清除筛选')}
             </button>
           ) : null}
         </div>
@@ -93,61 +104,71 @@ export default function ExploreCases() {
       <details className="case-overview" open>
         <summary className="case-overview-summary">
           <span>
-            <span className="overview-kicker">Browse the library</span>
-            <span className="overview-title">Case Overview</span>
+            <span className="overview-kicker">{l('Browse the library', '浏览案例库')}</span>
+            <span className="overview-title">{l('Case Overview', '案例总览')}</span>
           </span>
-          <span className="overview-toggle">{results.length} {results.length === 1 ? 'case' : 'cases'} <Icon name="arrow" size={16} /></span>
+          <span className="overview-toggle">
+            {l(`${results.length} ${results.length === 1 ? 'case' : 'cases'}`, `${results.length} 个案例`)} <Icon name="arrow" size={16} />
+          </span>
         </summary>
         <div className="case-overview-body">
-      <div className="results-head">
-        <h2 className="results-count">
-          {results.length} {results.length === 1 ? 'story' : 'stories'}
-          {hasFilters ? ' found' : ' to explore'}
-        </h2>
-        {hiddenCount > 0 ? (
-          <p className="results-note">
-            <Icon name="lock" size={14} /> {hiddenCount} unpublished {hiddenCount === 1 ? 'case is' : 'cases are'} private
-          </p>
-        ) : null}
-      </div>
-      {remoteError ? <p className="studio-message is-error">Live student cases could not be loaded. The library’s existing cases are still available.</p> : null}
+          <div className="results-head">
+            <h2 className="results-count">
+              {hasFilters
+                ? l(`${results.length} ${results.length === 1 ? 'story' : 'stories'} found`, `找到 ${results.length} 个故事`)
+                : l(`${results.length} ${results.length === 1 ? 'story' : 'stories'} to explore`, `有 ${results.length} 个故事可探索`)}
+            </h2>
+            {hiddenCount > 0 ? (
+              <p className="results-note">
+                <Icon name="lock" size={14} />{' '}
+                {l(
+                  `${hiddenCount} unpublished ${hiddenCount === 1 ? 'case is' : 'cases are'} private`,
+                  `${hiddenCount} 个未发布案例仅自己可见`,
+                )}
+              </p>
+            ) : null}
+          </div>
+          {remoteError ? (
+            <p className="studio-message is-error">
+              {l('Live student cases could not be loaded. The library’s existing cases are still available.', '在线学生案例加载失败，案例库中已有的案例仍可浏览。')}
+            </p>
+          ) : null}
 
-      {results.length > 0 ? (
-        <div className="case-grid">
-          {results.map((kase) => (
-            <CaseCard
-              key={kase.id}
-              kase={kase}
-              query={query}
-              role={role}
-              entryCount={kase.entries?.length ?? entriesFor(kase.id).length}
-            />
-          ))}
-        </div>
-      ) : (
-        <EmptyState
-          icon="search"
-          title="No stories match this search"
-          action={
-            <button
-              className="btn btn-primary"
-              type="button"
-              onClick={() => {
-                setQuery('')
-                setThemes([])
-              }}
+          {results.length > 0 ? (
+            <div className="case-grid">
+              {results.map((kase) => (
+                <CaseCard key={kase.id} kase={kase} />
+              ))}
+            </div>
+          ) : (
+            <EmptyState
+              icon="search"
+              title={l('No stories match this search', '没有找到匹配的故事')}
+              action={
+                <button
+                  className="btn btn-primary"
+                  type="button"
+                  onClick={() => {
+                    setQuery('')
+                    setThemes([])
+                  }}
+                >
+                  {l('Clear search and filters', '清除搜索与筛选')}
+                </button>
+              }
             >
-              Clear search and filters
-            </button>
-          }
-        >
-          <p>Try a broader keyword such as <em>embroidery</em>, <em>pattern</em> or <em>map</em>.</p>
-        </EmptyState>
-      )}
+              <p>
+                {l('Try a broader keyword such as ', '试试更宽泛的关键词，例如 ')}
+                <em>{l('embroidery', '刺绣')}</em>
+                {l(', ', '、')}
+                <em>{l('pattern', '纹样')}</em>
+                {l(' or ', ' 或 ')}
+                <em>{l('map', '地图')}</em>.
+              </p>
+            </EmptyState>
+          )}
         </div>
       </details>
-
-      {student ? <StudentStudio /> : null}
     </div>
   )
 }

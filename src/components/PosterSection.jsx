@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import Icon from './Icon.jsx'
 import Dual from './Dual.jsx'
-import { t } from '../lib/text.js'
+import { l, t } from '../lib/text.js'
 
 function PosterFigure({ src, caption, title }) {
   const [failed, setFailed] = useState(false)
@@ -10,7 +10,7 @@ function PosterFigure({ src, caption, title }) {
     return (
       <div className="poster-missing">
         <Icon name="camera" size={16} />
-        <span>Image not found: {src}</span>
+        <span>{l('Image not found', '未找到图片')}: {src}</span>
       </div>
     )
   }
@@ -19,7 +19,7 @@ function PosterFigure({ src, caption, title }) {
     <figure className="poster-figure">
       <img
         src={src}
-        alt={t(caption) || `Original student project poster: ${title}`}
+        alt={t(caption) || l(`Original student project poster: ${title}`, `学生原始项目海报：${title}`)}
         onError={() => setFailed(true)}
         loading="lazy"
       />
@@ -38,10 +38,13 @@ export default function PosterSection({ poster, posters, title, sourceKind }) {
         <p className="poster-gallery-note">
           <Icon name="flag" size={14} />
           {sourceKind === 'fictional_demo'
-            ? 'Fictional demo image created for this prototype — not a real student submission.'
+            ? l('Fictional demo image created for this prototype — not a real student submission.', '为本原型制作的虚构演示图片，并非真实学生作品。')
             : sourceKind === 'student_submission'
-              ? 'Images shared by the student team as part of this published field study.'
-              : `All ${posters.length} images are unmodified student originals from the “Go Far — outcome display examples” PDF.`}
+              ? l('Images shared by the student team as part of this published field study.', '由学生小队随这项已发布研究分享的图片。')
+              : l(
+                  `${posters.length} student-made poster ${posters.length === 1 ? 'image' : 'images'}, shown unmodified.`,
+                  `${posters.length} 张学生原创海报，原样展示。`,
+                )}
         </p>
       </div>
     )
@@ -54,13 +57,13 @@ export default function PosterSection({ poster, posters, title, sourceKind }) {
       </div>
       <div className="poster-drop-copy">
         <p className="poster-drop-title">
-          <Icon name="camera" size={16} /> Original poster scan not added yet
+          <Icon name="camera" size={16} /> {l('Original poster scan not added yet', '尚未添加原始海报扫描件')}
         </p>
-        <p>{t(poster?.note) || 'Image-based posters are the primary historical record.'}</p>
+        <p>{t(poster?.note) || l('Image-based posters are the primary historical record.', '图像海报是最主要的一手记录。')}</p>
         <code className="path-code">{poster?.imagePath || '/posters/<case-id>.png'}</code>
         <p className="muted small">
-          Save the scan at <code className="path-code">public{poster?.imagePath || ''}</code> and reload — it
-          renders here full-resolution, no code change needed.
+          {l('Save the scan at', '将扫描件保存到')} <code className="path-code">public{poster?.imagePath || ''}</code>{' '}
+          {l('and reload — it renders here full-resolution, no code change needed.', '并刷新页面，即可全分辨率显示，无需修改代码。')}
         </p>
       </div>
     </div>

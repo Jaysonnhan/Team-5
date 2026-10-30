@@ -1,11 +1,5 @@
-import { t, zh } from '../lib/text.js'
+import { t } from '../lib/text.js'
 
-export default function Dual({ v, className = '', original = false }) {
-  const source = original ? zh(v) : ''
-  return (
-    <span className={className}>
-      {t(v)}
-      {source ? <span className="zh-line">{source}</span> : null}
-    </span>
-  )
+export default function Dual({ v, className = '' }) {
+  return <span className={className}>{t(v)}</span>
 }
