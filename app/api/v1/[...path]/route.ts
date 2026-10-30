@@ -23,14 +23,58 @@ async function own(uid:string){return await env.DB!.prepare('SELECT * FROM proje
 function projectDto(row:Row){return {id:row.id,document:JSON.parse(row.document),version:row.version,published:row.published===1,updatedAt:row.updated_at}}
 function fileDto(f:any){return {id:f.id,kind:f.kind,day:f.day,name:f.name,type:f.type,size:f.size,url:'/api/v1/files/'+f.id,createdAt:f.created_at}}
 function story(row:Row){const d=JSON.parse(row.document);return {id:row.id,team:d.fields.team,destination:d.fields.destination,question:d.fields.question,specificQuestions:d.fields.specifics,reflection:d.fields.reflection,tripDays:d.days,updatedAt:row.updated_at}}
+
+function isAdministrator(request: Request) {
+ const uid=request.headers.get('oai-authenticated-user-id');
+ const email=(request.headers.get('oai-authenticated-user-email')||'').trim().toLowerCase();
+ const allow=(env.ADMIN_EMAILS||'').split(',').map(x=>x.trim().toLowerCase()).filter(Boolean);
+ return !!uid && !!email && allow.includes(email);
+}
+function adminFileDto(f:any){return {...fileDto(f),url:'/api/v1/admin/files/'+f.id,previewUrl:'/api/v1/admin/files/'+f.id+'?preview=1'}}
+function adminSummary(row:any){const d=JSON.parse(row.document);return {id:row.id,team:d.fields.team||'Untitled team',destination:d.fields.destination||'',question:d.fields.question||'',days:d.days,submitted:d.submitted,journalSubmitted:Object.entries(d.journals).filter(([day,j]:any)=>Number(day)<=d.days&&j.submitted).length,fileCount:Number(row.file_count)||0,published:row.published===1,version:row.version,createdAt:row.created_at,updatedAt:row.updated_at}}
+async function adminRequest(request:Request,parts:string[],url:URL){
+ if(!request.headers.get('oai-authenticated-user-id'))return error('Sign in with an administrator account.',401);
+ if(!isAdministrator(request))return error('This account does not have administrator access.',403);
+ if(request.method!=='GET')return error('The administrator console is read-only.',405);
+ if(parts[1]==='overview'&&parts.length===2){
+ const totals=await env.DB!.prepare('SELECT COUNT(*) AS totalProjects, COALESCE(SUM(CASE WHEN json_extract(document,\'$.submitted[3]\')=1 THEN 1 ELSE 0 END),0) AS finalSubmissions FROM projects').first<any>();
+ const uploads=await env.DB!.prepare('SELECT COUNT(*) AS totalFiles, COALESCE(SUM(size),0) AS storageBytes FROM files').first<any>();
+ const journals=await env.DB!.prepare("SELECT COUNT(*) AS submittedJournals FROM projects, json_each(projects.document,'$.journals') AS j WHERE CAST(j.key AS INTEGER)<=json_extract(projects.document,'$.days') AND json_extract(j.value,'$.submitted')=1").first<any>();
+ return json({metrics:{...totals,...uploads,...journals}});
+ }
+ if(parts[1]==='projects'&&parts.length===2){
+ const q=(url.searchParams.get('q')||'').trim().slice(0,200),status=url.searchParams.get('status')||'all';
+ const limit=Math.max(1,Math.min(50,Math.floor(Number(url.searchParams.get('limit'))||25))),offset=Math.max(0,Math.min(10000,Math.floor(Number(url.searchParams.get('offset'))||0)));
+ if(!['all','final','in-progress','no-files'].includes(status))return error('Invalid status filter.');
+ const where="(?='' OR instr(lower(COALESCE(json_extract(p.document,'$.fields.team'),'')||' '||COALESCE(json_extract(p.document,'$.fields.destination'),'')||' '||COALESCE(json_extract(p.document,'$.fields.question'),'')),lower(?))>0) AND (?='all' OR (?='final' AND json_extract(p.document,'$.submitted[3]')=1) OR (?='in-progress' AND json_extract(p.document,'$.submitted[3]')!=1) OR (?='no-files' AND NOT EXISTS (SELECT 1 FROM files f WHERE f.project_id=p.id)))";
+ const binds=[q,q,status,status,status,status];
+ const count=await env.DB!.prepare('SELECT COUNT(*) AS total FROM projects p WHERE '+where).bind(...binds).first<any>();
+ const rows=await env.DB!.prepare('SELECT p.*, (SELECT COUNT(*) FROM files f WHERE f.project_id=p.id) AS file_count FROM projects p WHERE '+where+' ORDER BY p.updated_at DESC,p.id LIMIT ? OFFSET ?').bind(...binds,limit,offset).all<any>();
+ return json({projects:rows.results.map(adminSummary),total:count.total,limit,offset,hasMore:offset+rows.results.length<count.total});
+ }
+ if(parts[1]==='projects'&&parts.length===3){
+ const row=await env.DB!.prepare('SELECT * FROM projects WHERE id=?').bind(parts[2]).first<Row>();if(!row)return error('Project not found.',404);
+ const fs=await env.DB!.prepare('SELECT * FROM files WHERE project_id=? ORDER BY created_at,id').bind(row.id).all<any>();
+ return json({project:{...projectDto(row),createdAt:row.created_at},files:fs.results.map(adminFileDto)});
+ }
+ if(parts[1]==='files'&&parts.length===3){
+ const f=await env.DB!.prepare('SELECT * FROM files WHERE id=?').bind(parts[2]).first<any>();if(!f)return error('File not found.',404);
+ const object=await env.BUCKET!.get(f.object_key);if(!object)return error('This file is not available in storage.',404);
+ const preview=url.searchParams.get('preview')==='1'&&['application/pdf','image/png','image/jpeg','image/gif','image/webp','image/avif'].includes(f.type);
+ return new Response(object.body,{headers:{'Content-Type':f.type,'Content-Disposition':`${preview?'inline':'attachment'}; filename*=UTF-8''${encodeURIComponent(f.name)}`,'X-Content-Type-Options':'nosniff','Cache-Control':'private, no-store','Referrer-Policy':'no-referrer'}});
+ }
+ return error('Administrator endpoint not found.',404);
+}
+
 async function handle(request:Request){
  try{
  const url=new URL(request.url),parts=url.pathname.replace(/^\/api\/v1\/?/,'').split('/').filter(Boolean),method=request.method;
  if(method==='OPTIONS'&&parts[0]==='cases')return new Response(null,{status:204,headers:{...publicHeaders,'Access-Control-Allow-Methods':'GET, OPTIONS'}});
  if(method==='GET'&&parts[0]==='health')return json({ok:true,apiVersion:'v1',storage:'D1 + R2'});
  const uid=request.headers.get('oai-authenticated-user-id');
- if(method==='GET'&&parts[0]==='session')return json({authenticated:!!uid,signInUrl:'/signin-with-chatgpt?return_to=%2Fstudent.html'});
+ if(method==='GET'&&parts[0]==='session')return json({authenticated:!!uid,administrator:isAdministrator(request),signInUrl:'/signin-with-chatgpt?return_to=%2Fstudent.html'});
  if(!env.DB||!env.BUCKET)return error('Cloud storage is not configured.',503);
+ if(parts[0]==='admin')return await adminRequest(request,parts,url);
  // Public case endpoints expose only opt-in completed stories, never member names or account IDs.
  if(method==='GET'&&parts[0]==='cases'){
  if(parts[1]){const row=await env.DB.prepare('SELECT * FROM projects WHERE id=? AND published=1').bind(parts[1]).first<Row>();if(!row)return publicJson({error:'Case not found.'},404);const d=JSON.parse(row.document);const fs=await env.DB.prepare('SELECT * FROM files WHERE project_id=? AND (kind=? OR kind=?) ORDER BY created_at').bind(row.id,'outcomes','photos').all();return publicJson({case:{...story(row),journals:Object.entries(d.journals).filter(([day,j]:any)=>Number(day)<=d.days&&j.submitted).map(([day,j]:any)=>({day:Number(day),observations:j.observations,challenges:j.challenges,response:j.response,photoNote:j.photoNote})),files:fs.results.filter((f:any)=>f.kind==='outcomes'||f.day<=d.days&&d.journals[f.day]?.submitted).map((f:any)=>({...fileDto(f),url:'/api/v1/case-files/'+f.id}))}})}

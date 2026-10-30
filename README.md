@@ -58,3 +58,10 @@ The search frontend can call the existing API using `public/journey-api.js`. Its
 ## Current scope
 
 One active project per signed-in account. The same account can retrieve its project from another device. Different accounts save separate projects into the same database. Team invitations, staff moderation and simultaneous collaborative editing are not implemented.
+
+
+## Administrator console
+
+Open `/admin` on the existing deployed site. Authorized administrators can search all projects, inspect private drafts and daily journals, preview images/PDFs and download uploaded files. The console is read-only; ordinary student accounts cannot access its API.
+
+Set the server-side `ADMIN_EMAILS` allowlist through the hosting platform. Real administrator addresses and runtime secrets are excluded from this public repository. See [administrator setup and usage](docs/ADMIN.md).

@@ -19,4 +19,29 @@ const search=await read(await req(null,'cases?q=village'));assert.equal(search.d
 const detail=await read(await req(null,'cases/'+id));assert.equal(detail.data.case.files.length,2);assert.equal(detail.data.case.journals.length,1);assert.ok(!JSON.stringify(detail.data).includes('Private Member'));assert.equal((await req(null,'case-files/'+ids[0])).status,200);
 result=await read(await req(a,'files/'+ids[0],'DELETE'));assert.equal(result.status,200);assert.equal(result.data.project.version,3);assert.equal((await req(null,'case-files/'+ids[1])).status,404);assert.equal(objects.size,1);
 assert.equal((await read(await req(null,'cases'))).data.cases.length,0);assert.equal((await req(a,'project','PUT',{version:3,document:doc})).status,400);
+
+env.ADMIN_EMAILS='admin@example.test';
+const adminRequest=(path,method='GET',headers={})=>exportsObj[method](new Request('https://example.test/api/v1/'+path,{method,headers:{'oai-authenticated-user-id':'admin-id','oai-authenticated-user-email':'admin@example.test',...headers}}));
+assert.equal((await req(null,'admin/overview')).status,401);
+assert.equal((await req(a,'admin/overview')).status,403);
+assert.equal((await adminRequest('admin/overview','GET',{'oai-authenticated-user-email':'student@example.test'})).status,403);
+assert.equal((await adminRequest('admin/overview','GET',{'oai-authenticated-user-id':''})).status,401);
+assert.equal((await read(await adminRequest('session'))).data.administrator,true);
+assert.equal((await read(await req(a,'session'))).data.administrator,false);
+let overview=await read(await adminRequest('admin/overview'));assert.equal(overview.status,200);assert.equal(overview.data.metrics.totalProjects,1);assert.equal(overview.data.metrics.totalFiles,1);assert.equal(overview.data.metrics.submittedJournals,1);
+let listed=await read(await adminRequest('admin/projects'));assert.equal(listed.data.projects[0].id,id);assert.equal(listed.data.projects[0].fileCount,1);
+let detailed=await read(await adminRequest('admin/projects/'+id));assert.equal(detailed.data.project.document.fields.members,'Private Member');assert.equal(detailed.data.files.length,1);
+assert.equal((await adminRequest('admin/files/'+ids[1])).status,200);
+assert.match((await adminRequest('admin/files/'+ids[1]+'?preview=1')).headers.get('content-disposition'),/^inline/);
+assert.equal((await adminRequest('admin/files/'+ids[1],'DELETE')).status,405);
+assert.equal((await req(b,'admin/files/'+ids[1])).status,403);
+const otherDoc=structuredClone(doc);otherDoc.fields.team='Second Team';otherDoc.submitted=[false,false,false,false];otherDoc.shareWithLibrary=false;
+assert.equal((await req(b,'project','PUT',{version:0,document:otherDoc})).status,200);
+overview=await read(await adminRequest('admin/overview'));assert.equal(overview.data.metrics.totalProjects,2);
+listed=await read(await adminRequest('admin/projects?q=Second'));assert.equal(listed.data.total,1);assert.equal(listed.data.projects[0].team,'Second Team');
+listed=await read(await adminRequest('admin/projects?status=no-files'));assert.equal(listed.data.total,1);
+listed=await read(await adminRequest('admin/projects?status=final'));assert.equal(listed.data.total,0);
+assert.equal((await adminRequest('admin/projects?status=unknown')).status,400);
+console.log('PASS: admin allowlist, anonymous/student denial, all-project metrics/list/search/filters/details, private file preview/download, read-only enforcement.');
+
 console.log('PASS: account isolation, cross-device read, optimistic conflicts, D1 SQL, R2 lifecycle, multi-file upload, server submission validation, opt-in case search, member redaction, file access and unpublishing on deletion.');})().catch(e=>{console.error(e);process.exit(1)});
