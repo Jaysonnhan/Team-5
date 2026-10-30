@@ -1,0 +1,22 @@
+const fs=require('fs'),assert=require('assert/strict'),ts=require('typescript');
+const {DatabaseSync}=require('node:sqlite');
+const db=new DatabaseSync(':memory:');db.exec(fs.readFileSync('drizzle/0000_old_lenny_balinger.sql','utf8'));
+const wrap=sql=>{let vals=[];return{bind(...v){vals=v;return this},async first(){return db.prepare(sql).get(...vals)||null},async all(){return{results:db.prepare(sql).all(...vals)}},async run(){const r=db.prepare(sql).run(...vals);return{meta:{changes:Number(r.changes)}}}}};
+const objects=new Map();const env={DB:{prepare:wrap,async batch(cmds){db.exec('BEGIN');try{const r=[];for(const c of cmds)r.push(await c.run());db.exec('COMMIT');return r}catch(e){db.exec('ROLLBACK');throw e}}},BUCKET:{async put(k,stream){objects.set(k,new Uint8Array(await new Response(stream).arrayBuffer()))},async get(k){return objects.has(k)?{body:objects.get(k)}:null},async delete(k){objects.delete(k)}}};
+let source=fs.readFileSync('app/api/v1/[...path]/route.ts','utf8').replace("import { env } from 'cloudflare:workers';",'');source=ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText;const exportsObj={};new Function('env','exports',source)(env,exportsObj);
+const req=async(user,path,method='GET',body)=>{const headers={};if(user)headers['oai-authenticated-user-id']=user;if(body&&! (body instanceof FormData))headers['content-type']='application/json';return exportsObj[method](new Request('https://example.test/api/v1/'+path,{method,headers,body:body instanceof FormData?body:body?JSON.stringify(body):undefined}))};
+const read=async r=>({status:r.status,data:await r.json()});
+(async()=>{const a='account-a',b='account-b';assert.equal((await req(null,'project')).status,401);
+const doc={fields:{destination:'Test Village',question:'How is the village changing?',team:'Test Team',members:'Private Member'},days:2,selectedDay:1,journals:{1:{observations:'A field note',submitted:true}},submitted:[true,false,false,false],shareWithLibrary:false};
+let result=await read(await req(a,'project','PUT',{version:0,document:doc}));assert.equal(result.status,200);assert.equal(result.data.project.version,1);const id=result.data.project.id;
+assert.equal((await read(await req(a,'project'))).data.project.id,id);assert.equal((await read(await req(b,'project'))).data.project,null);
+assert.equal((await req(a,'project','PUT',{version:0,document:doc})).status,409);
+let ids=[];for(const name of ['report.pdf','poster.png']){const data=new FormData();data.append('file',new File(['mock content'],name,{type:name.endsWith('pdf')?'application/pdf':'image/png'}));data.append('kind','outcomes');let r=await read(await req(a,'files','POST',data));assert.equal(r.status,201);ids.push(r.data.file.id)}
+assert.equal((await read(await req(a,'files'))).data.files.length,2);assert.equal((await req(b,'files/'+ids[0])).status,404);assert.equal((await req(b,'files/'+ids[0],'DELETE')).status,404);assert.equal((await req(null,'case-files/'+ids[0])).status,404);
+assert.equal((await read(await req(null,'cases'))).data.cases.length,0);
+doc.submitted[3]=true;doc.shareWithLibrary=true;result=await read(await req(a,'project','PUT',{version:1,document:doc}));assert.equal(result.status,200);
+const search=await read(await req(null,'cases?q=village'));assert.equal(search.data.cases.length,1);assert.equal(search.data.cases[0].id,id);assert.ok(!JSON.stringify(search.data).includes('Private Member'));
+const detail=await read(await req(null,'cases/'+id));assert.equal(detail.data.case.files.length,2);assert.equal(detail.data.case.journals.length,1);assert.ok(!JSON.stringify(detail.data).includes('Private Member'));assert.equal((await req(null,'case-files/'+ids[0])).status,200);
+result=await read(await req(a,'files/'+ids[0],'DELETE'));assert.equal(result.status,200);assert.equal(result.data.project.version,3);assert.equal((await req(null,'case-files/'+ids[1])).status,404);assert.equal(objects.size,1);
+assert.equal((await read(await req(null,'cases'))).data.cases.length,0);assert.equal((await req(a,'project','PUT',{version:3,document:doc})).status,400);
+console.log('PASS: account isolation, cross-device read, optimistic conflicts, D1 SQL, R2 lifecycle, multi-file upload, server submission validation, opt-in case search, member redaction, file access and unpublishing on deletion.');})().catch(e=>{console.error(e);process.exit(1)});
